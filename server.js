@@ -5,28 +5,23 @@ import OpenAI from "openai";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// middleware
 app.use(cors());
 app.use(express.json());
 
-// OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-// ✅ ROOT ROUTE (THIS FIXES "Not Found")
+/* ✅ ROOT CHECK (VERY IMPORTANT) */
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
-// ✅ TRANSLATE ROUTE
+/* OpenAI setup */
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+/* Receipt extraction */
 app.post("/translate", async (req, res) => {
   try {
-    const { text } = req.body;
-
-    if (!text) {
-      return res.status(400).json({ error: "No text provided" });
-    }
+    const text = req.body.text || "";
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -34,8 +29,12 @@ app.post("/translate", async (req, res) => {
         {
           role: "system",
           content: `
-Extract receipt data and return ONLY valid JSON.
+You are a receipt data extractor.
 
+Return ONLY valid JSON.
+Do NOT add any text before or after JSON.
+
+JSON format:
 {
   "storeName": "",
   "storePhone": "",
@@ -55,9 +54,8 @@ Extract receipt data and return ONLY valid JSON.
 
 Rules:
 - Translate to English if needed
-- Leave empty if not found
-- Numbers must be numbers
-- JSON only
+- Leave fields empty if not found
+- Quantity and price must be numbers
 `
         },
         { role: "user", content: text }
@@ -76,7 +74,7 @@ Rules:
   }
 });
 
-// start server
+/* Start server */
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
