@@ -3,23 +3,23 @@ import cors from "cors";
 import OpenAI from "openai";
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-// ✅ REQUIRED MIDDLEWARE
+// middleware
 app.use(cors());
 app.use(express.json());
 
-// ✅ OpenAI client
+// OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ✅ Health check
+// ✅ ROOT ROUTE (THIS FIXES "Not Found")
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
-// ✅ TRANSLATE + EXTRACT ROUTE
+// ✅ TRANSLATE ROUTE
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
@@ -36,7 +36,6 @@ app.post("/translate", async (req, res) => {
           content: `
 Extract receipt data and return ONLY valid JSON.
 
-JSON format:
 {
   "storeName": "",
   "storePhone": "",
@@ -56,9 +55,9 @@ JSON format:
 
 Rules:
 - Translate to English if needed
-- Leave fields empty if not found
-- Quantity and price must be numbers
-- NO extra text, ONLY JSON
+- Leave empty if not found
+- Numbers must be numbers
+- JSON only
 `
         },
         { role: "user", content: text }
@@ -72,12 +71,12 @@ Rules:
     res.json(data);
 
   } catch (err) {
-    console.error("SERVER ERROR:", err);
+    console.error("ERROR:", err);
     res.status(500).json({ error: "Extraction failed" });
   }
 });
 
-// ✅ START SERVER
-app.listen(port, () => {
-  console.log("Server running on port", port);
+// start server
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
 });
