@@ -1,6 +1,19 @@
+import express from "express";
+import cors from "cors";
+import OpenAI from "openai";
+
+const app = express();            // ✅ REQUIRED
+app.use(cors());
+app.use(express.json());
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// ===== TRANSLATE & EXTRACT ROUTE =====
 app.post("/translate", async (req, res) => {
   try {
-    const text = req.body.text;
+    const text = req.body.text || "";
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -46,7 +59,6 @@ Rules:
     });
 
     const raw = completion.choices[0].message.content;
-
     const data = JSON.parse(raw);
 
     res.json(data);
@@ -63,4 +75,15 @@ Rules:
       items: []
     });
   }
+});
+
+// ===== HEALTH CHECK =====
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
+// ===== START SERVER =====
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
 });
