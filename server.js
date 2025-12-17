@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 
@@ -9,15 +8,21 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS – HARD FIX
+   HARD CORS FIX (EXTENSIONS)
 ========================= */
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, OPTIONS"
+  );
 
   if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+    return res.status(200).end();
   }
 
   next();
@@ -26,14 +31,14 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 /* =========================
-   OpenAI
+   OPENAI
 ========================= */
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 /* =========================
-   ROOT ROUTE (TEST)
+   ROOT ROUTE
 ========================= */
 app.get("/", (req, res) => {
   res.send("Backend is running");
@@ -83,9 +88,12 @@ Rules:
 - Output JSON ONLY
 `
         },
-        { role: "user", content: text }
+        {
+          role: "user",
+          content: text
+        }
       ],
-      temperature: 0.1,
+      temperature: 0.1
     });
 
     const raw = completion.choices[0].message.content.trim();
@@ -94,7 +102,7 @@ Rules:
     res.json(data);
 
   } catch (err) {
-    console.error(err);
+    console.error("ERROR:", err);
     res.status(500).json({ error: "Extraction failed" });
   }
 });
