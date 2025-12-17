@@ -3,6 +3,10 @@ import cors from "cors";
 import OpenAI from "openai";
 
 const app = express();
+app.get("/", (req, res) => {
+  res.send("Backend is running");
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
