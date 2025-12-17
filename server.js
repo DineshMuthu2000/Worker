@@ -1,26 +1,3 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import OpenAI from "openai";
-
-dotenv.config();
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(cors());
-app.use(express.json());
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// ✅ ROOT ROUTE (fixes "Not Found")
-app.get("/", (req, res) => {
-  res.send("Backend is running");
-});
-
-// ✅ TRANSLATE ROUTE
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
@@ -31,7 +8,10 @@ app.post("/translate", async (req, res) => {
         {
           role: "system",
           content: `
-Extract receipt data and return ONLY valid JSON.
+You are a receipt data extractor.
+
+Return ONLY valid JSON.
+Do NOT add any text before or after JSON.
 
 JSON format:
 {
@@ -53,26 +33,25 @@ JSON format:
 
 Rules:
 - Translate to English if needed
-- Leave empty if not found
+- Leave fields empty if not found
 - Quantity and price must be numbers
-- Output JSON ONLY
 `
         },
-        { role: "user", content: text }
+        {
+          role: "user",
+          content: text
+        }
       ],
       temperature: 0.1
     });
 
-    const data = JSON.parse(completion.choices[0].message.content);
+    const raw = completion.choices[0].message.content.trim();
+    const data = JSON.parse(raw);
+
     res.json(data);
 
   } catch (err) {
-    console.error(err);
+    console.error("ERROR:", err);
     res.status(500).json({ error: "Extraction failed" });
   }
-});
-
-// ✅ START SERVER
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
 });
