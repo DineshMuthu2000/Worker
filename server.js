@@ -1,6 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
-import OpenAI from "openai";
+import fetch from "node-fetch";
 
 dotenv.config();
 
@@ -8,33 +8,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS (Chrome Extensions)
+   CORS
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept"
+    "Content-Type"
   );
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, OPTIONS"
   );
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
+  if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 
 app.use(express.json({ limit: "2mb" }));
-
-/* =========================
-   OPENAI
-========================= */
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 /* =========================
    TEST ROUTE
@@ -44,23 +34,28 @@ app.get("/", (req, res) => {
 });
 
 /* =========================
-   TRANSLATE / EXTRACT
+   GEMINI TRANSLATE ROUTE
 ========================= */
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
 
-    if (!text || text.length < 10) {
-      return res.status(400).json({
-        error: "Empty or invalid receipt text"
-      });
+    if (!text) {
+      return res.status(400).json({ error: "No text provided" });
     }
 
-    const prompt = `
-You are a receipt parser.
-
-Extract structured JSON ONLY.
-No explanations. No markdown.
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `
+Extract receipt data and return ONLY valid JSON.
 
 JSON format:
 {
@@ -81,56 +76,44 @@ JSON format:
 }
 
 Rules:
-- If a value is missing, use empty string ""
-- Quantity must be numeric if possible
-- Price must be numeric (use minus for discounts)
-- English letters only in descriptions
+- Translate to English
+- Leave empty if not found
+- Quantity and price must be numbers
 
-Receipt text:
+Receipt:
 ${text}
-`;
+`
+                }
+              ]
+            }
+          ]
+        })
+      }
+    );
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0
-    });
+    const data = await response.json();
 
-    let raw = completion.choices[0].message.content;
+    const raw =
+      data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-    // 🔧 SAFETY CLEAN
-    raw = raw
+    const cleaned = raw
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
 
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      console.error("JSON PARSE ERROR:", raw);
-      return res.status(500).json({
-        error: "Invalid JSON from AI",
-        raw
-      });
-    }
-
-    // Ensure structure
-    parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
+    const parsed = JSON.parse(cleaned);
 
     res.json(parsed);
 
   } catch (err) {
-    console.error("SERVER ERROR:", err);
-    res.status(500).json({
-      error: err.message || "Server extraction error"
-    });
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 /* =========================
-   START SERVER
+   START
 ========================= */
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log("Server running on port " + PORT);
 });
