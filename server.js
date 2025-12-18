@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   HARD CORS FIX (EXTENSIONS)
+   CORS (Chrome Extensions)
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -22,9 +22,8 @@ app.use((req, res, next) => {
   );
 
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    return res.sendStatus(200);
   }
-
   next();
 });
 
@@ -38,7 +37,7 @@ const openai = new OpenAI({
 });
 
 /* =========================
-   ROOT TEST
+   TEST ROUTE
 ========================= */
 app.get("/", (req, res) => {
   res.send("Backend is running");
@@ -52,21 +51,16 @@ app.post("/translate", async (req, res) => {
     const { text } = req.body;
 
     if (!text || text.length < 10) {
-      return res.status(400).json({ error: "Invalid or empty receipt text" });
+      return res.status(400).json({
+        error: "Empty or invalid receipt text"
+      });
     }
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        {
-          role: "system",
-          content: `
+    const prompt = `
 You are a receipt parser.
-Return ONLY valid JSON.
-No explanations.
-No markdown.
-No comments.
+
+Extract structured JSON ONLY.
+No explanations. No markdown.
 
 JSON format:
 {
@@ -85,37 +79,52 @@ JSON format:
     }
   ]
 }
-`
-        },
-        {
-          role: "user",
-          content: text
-        }
-      ]
+
+Rules:
+- If a value is missing, use empty string ""
+- Quantity must be numeric if possible
+- Price must be numeric (use minus for discounts)
+- English letters only in descriptions
+
+Receipt text:
+${text}
+`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0
     });
 
-    const raw = completion.choices?.[0]?.message?.content;
+    let raw = completion.choices[0].message.content;
 
-    if (!raw) {
-      throw new Error("Empty AI response");
-    }
+    // 🔧 SAFETY CLEAN
+    raw = raw
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
 
     let parsed;
     try {
       parsed = JSON.parse(raw);
     } catch (e) {
-      console.error("❌ AI RAW OUTPUT:", raw);
-      throw new Error("AI returned invalid JSON");
+      console.error("JSON PARSE ERROR:", raw);
+      return res.status(500).json({
+        error: "Invalid JSON from AI",
+        raw
+      });
     }
 
-    // Safety defaults
+    // Ensure structure
     parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
 
     res.json(parsed);
 
   } catch (err) {
-    console.error("❌ EXTRACTION ERROR:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("SERVER ERROR:", err);
+    res.status(500).json({
+      error: err.message || "Server extraction error"
+    });
   }
 });
 
