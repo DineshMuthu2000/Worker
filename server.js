@@ -7,9 +7,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ============================
+/* =========================
    HARD CORS FIX (EXTENSIONS)
-============================ */
+========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
@@ -21,52 +21,52 @@ app.use((req, res, next) => {
     "GET, POST, OPTIONS"
   );
 
-  // IMPORTANT: handle preflight
   if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
+    return res.status(200).end();
   }
 
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
-/* ============================
-   OPENAI CONFIG
-============================ */
+/* =========================
+   OPENAI
+========================= */
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY
 });
 
-/* ============================
-   ROOT TEST ROUTE
-============================ */
+/* =========================
+   ROOT TEST
+========================= */
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
-/* ============================
-   TRANSLATE ROUTE
-============================ */
+/* =========================
+   TRANSLATE / EXTRACT
+========================= */
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
 
-    if (!text) {
-      return res.status(400).json({ error: "No text provided" });
+    if (!text || text.length < 10) {
+      return res.status(400).json({ error: "Invalid or empty receipt text" });
     }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.1,
+      temperature: 0,
       messages: [
         {
           role: "system",
           content: `
-You are a receipt data extractor.
-
+You are a receipt parser.
 Return ONLY valid JSON.
 No explanations.
+No markdown.
+No comments.
 
 JSON format:
 {
@@ -85,11 +85,6 @@ JSON format:
     }
   ]
 }
-
-Rules:
-- Translate to English if needed
-- Leave empty if not found
-- Quantity and price must be numbers
 `
         },
         {
@@ -99,20 +94,34 @@ Rules:
       ]
     });
 
-    const raw = completion.choices[0].message.content.trim();
-    const data = JSON.parse(raw);
+    const raw = completion.choices?.[0]?.message?.content;
 
-    res.json(data);
+    if (!raw) {
+      throw new Error("Empty AI response");
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      console.error("❌ AI RAW OUTPUT:", raw);
+      throw new Error("AI returned invalid JSON");
+    }
+
+    // Safety defaults
+    parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
+
+    res.json(parsed);
 
   } catch (err) {
-    console.error("ERROR:", err);
-    res.status(500).json({ error: "Extraction failed" });
+    console.error("❌ EXTRACTION ERROR:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ============================
+/* =========================
    START SERVER
-============================ */
+========================= */
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log(`Server running on port ${PORT}`);
 });
