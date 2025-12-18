@@ -1,6 +1,5 @@
 import express from "express";
 import dotenv from "dotenv";
-import fetch from "node-fetch";
 
 dotenv.config();
 
@@ -12,14 +11,8 @@ const PORT = process.env.PORT || 3000;
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, OPTIONS"
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
@@ -40,11 +33,11 @@ app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
 
-    if (!text) {
+    if (!text || !text.trim()) {
       return res.status(400).json({ error: "No text provided" });
     }
 
-    const response = await fetch(
+    const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
@@ -91,23 +84,42 @@ ${text}
       }
     );
 
-    const data = await response.json();
+    const data = await geminiResponse.json();
 
     const raw =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     const cleaned = raw
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
 
-    const parsed = JSON.parse(cleaned);
+    let parsed;
 
-    res.json(parsed);
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      // ✅ SAFE FALLBACK (prevents frontend crash)
+      parsed = {
+        storeName: "",
+        storePhone: "",
+        storeAddress: "",
+        purchaseDate: "",
+        purchaseTime: "",
+        totalPaid: "",
+        items: []
+      };
+    }
+
+    return res.json(parsed);
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error("TRANSLATE ERROR:", err);
+
+    // ✅ ALWAYS RETURN JSON
+    return res.status(500).json({
+      error: err.message || "Extraction failed"
+    });
   }
 });
 
