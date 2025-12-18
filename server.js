@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS (Chrome Extension Safe)
+   CORS
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -27,21 +27,21 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "2mb" }));
 
 /* =========================
-   HEALTH CHECK
+   TEST ROUTE
 ========================= */
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
 /* =========================
-   RECEIPT EXTRACTION (GEMINI)
+   GEMINI RECEIPT EXTRACTION
 ========================= */
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
 
-    if (!text || typeof text !== "string") {
-      return res.status(400).json({ error: "No receipt text provided" });
+    if (!text) {
+      return res.status(400).json({ error: "No text provided" });
     }
 
     if (!process.env.GEMINI_API_KEY) {
@@ -49,16 +49,13 @@ app.post("/translate", async (req, res) => {
     }
 
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
             {
-              role: "user",
               parts: [
                 {
                   text: `
@@ -87,11 +84,12 @@ STRICT JSON FORMAT:
 
 RULES:
 - Translate everything to English
-- If a field is missing, leave it as ""
-- Quantity and price must be numbers (no currency symbols)
-- Split EACH product into a separate item
-- Maximum 10 items
-- Product codes are optional
+- Leave fields empty if not found
+- Quantity must be a number (default 1 if missing)
+- Price must be a number (no currency symbols)
+- Split each product into a separate item
+- Maximum 10 items only
+- Do NOT merge multiple products into one line
 
 RECEIPT TEXT:
 ${text}
@@ -124,7 +122,7 @@ ${text}
     let parsed;
     try {
       parsed = JSON.parse(cleaned);
-    } catch (err) {
+    } catch (e) {
       return res.status(500).json({
         error: "Invalid JSON returned by Gemini",
         raw: cleaned
