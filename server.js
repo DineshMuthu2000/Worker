@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import fetch from "node-fetch";
 
 dotenv.config();
 
@@ -7,12 +8,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS
+   CORS (for Chrome Extension)
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, OPTIONS"
+  );
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
@@ -27,18 +34,22 @@ app.get("/", (req, res) => {
 });
 
 /* =========================
-   GEMINI TRANSLATE ROUTE
+   GEMINI RECEIPT EXTRACTION
 ========================= */
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
 
     if (!text || !text.trim()) {
-      return res.status(400).json({ error: "No text provided" });
+      return res.status(400).json({ error: "No receipt text provided" });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: "GEMINI_API_KEY not set" });
     }
 
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,9 +59,12 @@ app.post("/translate", async (req, res) => {
               parts: [
                 {
                   text: `
-Extract receipt data and return ONLY valid JSON.
+You are extracting receipt data for a form-filling task.
 
-JSON format:
+Return ONLY valid JSON.
+Do NOT include explanations, markdown, or extra text.
+
+STRICT JSON FORMAT:
 {
   "storeName": "",
   "storePhone": "",
@@ -68,14 +82,19 @@ JSON format:
   ]
 }
 
-Rules:
-- Translate to English
-- Leave empty if not found
-- Quantity and price must be numbers
+RULES:
+- Translate everything to English
+- Leave missing fields as empty strings ""
+- Quantity must be a number (default to 1 if missing)
+- Price must be a number only (no currency symbols)
+- Split EACH product into a separate item
+- Maximum 10 items only
+- Do NOT merge multiple products into one line
+- Product codes are optional (leave empty if not found)
 
-Receipt:
+RECEIPT TEXT:
 ${text}
-`
+                  `
                 }
               ]
             }
@@ -84,47 +103,43 @@ ${text}
       }
     );
 
-    const data = await geminiResponse.json();
+    const geminiData = await geminiResponse.json();
 
-    const raw =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const rawText =
+      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    const cleaned = raw
+    if (!rawText) {
+      return res.status(500).json({
+        error: "Gemini response missing content",
+        raw: geminiData
+      });
+    }
+
+    const cleaned = rawText
       .replace(/```json/gi, "")
       .replace(/```/g, "")
       .trim();
 
     let parsed;
-
     try {
       parsed = JSON.parse(cleaned);
-    } catch {
-      // ✅ SAFE FALLBACK (prevents frontend crash)
-      parsed = {
-        storeName: "",
-        storePhone: "",
-        storeAddress: "",
-        purchaseDate: "",
-        purchaseTime: "",
-        totalPaid: "",
-        items: []
-      };
+    } catch (e) {
+      return res.status(500).json({
+        error: "Invalid JSON returned by Gemini",
+        raw: cleaned
+      });
     }
 
-    return res.json(parsed);
+    res.json(parsed);
 
   } catch (err) {
-    console.error("TRANSLATE ERROR:", err);
-
-    // ✅ ALWAYS RETURN JSON
-    return res.status(500).json({
-      error: err.message || "Extraction failed"
-    });
+    console.error("SERVER ERROR:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 /* =========================
-   START
+   START SERVER
 ========================= */
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
