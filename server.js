@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CORS
+   CORS (Chrome Extension Safe)
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -21,22 +21,29 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "2mb" }));
 
 /* =========================
-   TEST
+   ROOT TEST
 ========================= */
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
 /* =========================
-   TRANSLATE / EXTRACT
+   RECEIPT EXTRACTION
 ========================= */
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
-    if (!text) return res.status(400).json({ error: "No text provided" });
+
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "No text provided" });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: "GEMINI_API_KEY missing" });
+    }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -46,10 +53,10 @@ app.post("/translate", async (req, res) => {
               parts: [
                 {
                   text: `
-You are extracting receipt data for a form auto-filling task.
+You are extracting receipt data for an automated form-filling task.
 
-⚠️ RETURN ONLY VALID JSON.
-⚠️ DO NOT add explanations, text, markdown, or notes.
+⚠️ OUTPUT ONLY VALID JSON
+⚠️ NO explanations, NO markdown, NO text outside JSON
 
 STRICT JSON FORMAT (DO NOT CHANGE KEYS):
 
@@ -70,15 +77,15 @@ STRICT JSON FORMAT (DO NOT CHANGE KEYS):
   ]
 }
 
-RULES (VERY IMPORTANT):
+RULES:
 - Translate everything to English
-- If a field is missing, leave it as empty string
-- Each product MUST be its OWN object in items[]
-- NEVER merge multiple products into one item
-- Quantity MUST be a number (default = 1)
-- Price MUST be a number (remove currency symbols)
+- Each product MUST be its own object in "items"
+- NEVER merge multiple products
+- Quantity must be a number (default 1)
+- Price must be a number (remove currency symbols)
+- Product code optional (empty string if missing)
 - Max 10 items only
-- Product code is optional (empty if not found)
+- Leave missing fields empty
 
 RECEIPT TEXT:
 ${text}
@@ -111,7 +118,7 @@ ${text}
     let parsed;
     try {
       parsed = JSON.parse(cleaned);
-    } catch {
+    } catch (err) {
       return res.status(500).json({
         error: "Invalid JSON returned by Gemini",
         raw: cleaned
@@ -127,7 +134,7 @@ ${text}
 });
 
 /* =========================
-   START
+   START SERVER
 ========================= */
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
