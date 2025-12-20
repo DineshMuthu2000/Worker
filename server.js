@@ -12,14 +12,8 @@ const PORT = process.env.PORT || 3000;
 ========================= */
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, OPTIONS"
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
@@ -27,28 +21,21 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "2mb" }));
 
 /* =========================
-   TEST ROUTE
+   TEST
 ========================= */
 app.get("/", (req, res) => {
   res.send("Backend is running");
 });
 
 /* =========================
-   GEMINI RECEIPT EXTRACTION
+   TRANSLATE / EXTRACT
 ========================= */
 app.post("/translate", async (req, res) => {
   try {
     const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "No text provided" });
 
-    if (!text) {
-      return res.status(400).json({ error: "No text provided" });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ error: "GEMINI_API_KEY missing" });
-    }
-
-    const geminiResponse = await fetch(
+    const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: "POST",
@@ -59,12 +46,13 @@ app.post("/translate", async (req, res) => {
               parts: [
                 {
                   text: `
-You are extracting receipt data for a form-filling task.
+You are extracting receipt data for a form auto-filling task.
 
-Return ONLY valid JSON.
-Do NOT include explanations, markdown, or extra text.
+⚠️ RETURN ONLY VALID JSON.
+⚠️ DO NOT add explanations, text, markdown, or notes.
 
-STRICT JSON FORMAT:
+STRICT JSON FORMAT (DO NOT CHANGE KEYS):
+
 {
   "storeName": "",
   "storePhone": "",
@@ -76,20 +64,21 @@ STRICT JSON FORMAT:
     {
       "description": "",
       "code": "",
-      "quantity": "",
-      "price": ""
+      "quantity": 1,
+      "price": 0
     }
   ]
 }
 
-RULES:
+RULES (VERY IMPORTANT):
 - Translate everything to English
-- Leave fields empty if not found
-- Quantity must be a number (default 1 if missing)
-- Price must be a number (no currency symbols)
-- Split each product into a separate item
-- Maximum 10 items only
-- Do NOT merge multiple products into one line
+- If a field is missing, leave it as empty string
+- Each product MUST be its OWN object in items[]
+- NEVER merge multiple products into one item
+- Quantity MUST be a number (default = 1)
+- Price MUST be a number (remove currency symbols)
+- Max 10 items only
+- Product code is optional (empty if not found)
 
 RECEIPT TEXT:
 ${text}
@@ -102,7 +91,7 @@ ${text}
       }
     );
 
-    const geminiData = await geminiResponse.json();
+    const geminiData = await response.json();
 
     const rawText =
       geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -122,7 +111,7 @@ ${text}
     let parsed;
     try {
       parsed = JSON.parse(cleaned);
-    } catch (e) {
+    } catch {
       return res.status(500).json({
         error: "Invalid JSON returned by Gemini",
         raw: cleaned
@@ -138,7 +127,7 @@ ${text}
 });
 
 /* =========================
-   START SERVER
+   START
 ========================= */
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
